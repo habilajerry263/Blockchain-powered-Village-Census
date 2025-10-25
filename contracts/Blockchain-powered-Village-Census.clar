@@ -19,7 +19,7 @@
     household-id: uint,
     registered-at: uint,
     verified: bool,
-    registrar: principal
+    registrar: principal,
   }
 )
 
@@ -31,7 +31,7 @@
     members-count: uint,
     created-at: uint,
     last-updated: uint,
-    verified: bool
+    verified: bool,
   }
 )
 
@@ -40,7 +40,7 @@
   {
     active: bool,
     appointed-at: uint,
-    households-assigned: uint
+    households-assigned: uint,
   }
 )
 
@@ -62,53 +62,47 @@
     verified-residents: uint,
     census-start: uint,
     census-end: uint,
-    completed: bool
+    completed: bool,
   }
 )
 
 (define-private (get-next-resident-id)
-  (let
-    (
+  (let (
       (current-round (var-get census-round))
-      (counter-data (default-to { next-id: u1 } (map-get? resident-counter { round: current-round })))
+      (counter-data (default-to { next-id: u1 }
+        (map-get? resident-counter { round: current-round })
+      ))
     )
     (get next-id counter-data)
   )
 )
 
 (define-private (get-next-household-id)
-  (let
-    (
+  (let (
       (current-round (var-get census-round))
-      (counter-data (default-to { next-id: u1 } (map-get? household-counter { round: current-round })))
+      (counter-data (default-to { next-id: u1 }
+        (map-get? household-counter { round: current-round })
+      ))
     )
     (get next-id counter-data)
   )
 )
 
 (define-private (increment-resident-counter)
-  (let
-    (
+  (let (
       (current-round (var-get census-round))
       (current-id (get-next-resident-id))
     )
-    (map-set resident-counter
-      { round: current-round }
-      { next-id: (+ current-id u1) }
-    )
+    (map-set resident-counter { round: current-round } { next-id: (+ current-id u1) })
   )
 )
 
 (define-private (increment-household-counter)
-  (let
-    (
+  (let (
       (current-round (var-get census-round))
       (current-id (get-next-household-id))
     )
-    (map-set household-counter
-      { round: current-round }
-      { next-id: (+ current-id u1) }
-    )
+    (map-set household-counter { round: current-round } { next-id: (+ current-id u1) })
   )
 )
 
@@ -121,28 +115,22 @@
 (define-public (appoint-census-officer (officer principal))
   (begin
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
-    (ok (map-set census-officers
-      { officer: officer }
-      {
-        active: true,
-        appointed-at: stacks-block-height,
-        households-assigned: u0
-      }
-    ))
+    (ok (map-set census-officers { officer: officer } {
+      active: true,
+      appointed-at: stacks-block-height,
+      households-assigned: u0,
+    }))
   )
 )
 
 (define-public (remove-census-officer (officer principal))
   (begin
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
-    (ok (map-set census-officers
-      { officer: officer }
-      {
-        active: false,
-        appointed-at: u0,
-        households-assigned: u0
-      }
-    ))
+    (ok (map-set census-officers { officer: officer } {
+      active: false,
+      appointed-at: u0,
+      households-assigned: u0,
+    }))
   )
 )
 
@@ -159,8 +147,7 @@
 )
 
 (define-public (create-household (address (string-ascii 200)))
-  (let
-    (
+  (let (
       (household-id (get-next-household-id))
       (current-height stacks-block-height)
     )
@@ -169,30 +156,33 @@
     (asserts! (> (len address) u0) ERR_INVALID_INPUT)
     (increment-household-counter)
     (var-set total-households (+ (var-get total-households) u1))
-    (map-set households
-      { household-id: household-id }
-      {
-        head-of-household: u0,
-        address: address,
-        members-count: u0,
-        created-at: current-height,
-        last-updated: current-height,
-        verified: false
-      }
-    )
+    (map-set households { household-id: household-id } {
+      head-of-household: u0,
+      address: address,
+      members-count: u0,
+      created-at: current-height,
+      last-updated: current-height,
+      verified: false,
+    })
     (ok household-id)
   )
 )
 
-(define-public (register-resident (name (string-ascii 100)) (age uint) (household-id uint))
-  (let
-    (
+(define-public (register-resident
+    (name (string-ascii 100))
+    (age uint)
+    (household-id uint)
+  )
+  (let (
       (resident-id (get-next-resident-id))
       (current-height stacks-block-height)
       (household-data (unwrap! (map-get? households { household-id: household-id }) ERR_NOT_FOUND))
       (current-head (get head-of-household household-data))
       (current-members (get members-count household-data))
-      (new-head (if (is-eq current-head u0) resident-id current-head))
+      (new-head (if (is-eq current-head u0)
+        resident-id
+        current-head
+      ))
       (new-members (+ current-members u1))
     )
     (asserts! (var-get census-active) ERR_CENSUS_LOCKED)
@@ -200,100 +190,89 @@
     (asserts! (and (> (len name) u0) (> age u0)) ERR_INVALID_INPUT)
     (increment-resident-counter)
     (var-set total-population (+ (var-get total-population) u1))
-    (map-set households
-      { household-id: household-id }
-      {
-        head-of-household: new-head,
-        address: (get address household-data),
-        members-count: new-members,
-        created-at: (get created-at household-data),
-        last-updated: current-height,
-        verified: (get verified household-data)
-      }
-    )
-    (map-set residents
-      { resident-id: resident-id }
-      {
-        name: name,
-        age: age,
-        household-id: household-id,
-        registered-at: current-height,
-        verified: false,
-        registrar: tx-sender
-      }
-    )
+    (map-set households { household-id: household-id } {
+      head-of-household: new-head,
+      address: (get address household-data),
+      members-count: new-members,
+      created-at: (get created-at household-data),
+      last-updated: current-height,
+      verified: (get verified household-data),
+    })
+    (map-set residents { resident-id: resident-id } {
+      name: name,
+      age: age,
+      household-id: household-id,
+      registered-at: current-height,
+      verified: false,
+      registrar: tx-sender,
+    })
     (ok resident-id)
   )
 )
 
 (define-public (verify-resident (resident-id uint))
-  (let
-    (
+  (let (
       (resident-data (unwrap! (map-get? residents { resident-id: resident-id }) ERR_NOT_FOUND))
       (officer-data (unwrap! (map-get? census-officers { officer: tx-sender }) ERR_UNAUTHORIZED))
     )
     (asserts! (get active officer-data) ERR_UNAUTHORIZED)
     (asserts! (var-get census-active) ERR_CENSUS_LOCKED)
-    (map-set residents
-      { resident-id: resident-id }
-      {
-        name: (get name resident-data),
-        age: (get age resident-data),
-        household-id: (get household-id resident-data),
-        registered-at: (get registered-at resident-data),
-        verified: true,
-        registrar: (get registrar resident-data)
-      }
-    )
+    (map-set residents { resident-id: resident-id } {
+      name: (get name resident-data),
+      age: (get age resident-data),
+      household-id: (get household-id resident-data),
+      registered-at: (get registered-at resident-data),
+      verified: true,
+      registrar: (get registrar resident-data),
+    })
     (ok true)
   )
 )
 
 (define-public (verify-household (household-id uint))
-  (let
-    (
+  (let (
       (household-data (unwrap! (map-get? households { household-id: household-id }) ERR_NOT_FOUND))
       (officer-data (unwrap! (map-get? census-officers { officer: tx-sender }) ERR_UNAUTHORIZED))
     )
     (asserts! (get active officer-data) ERR_UNAUTHORIZED)
     (asserts! (var-get census-active) ERR_CENSUS_LOCKED)
-    (map-set households
-      { household-id: household-id }
-      {
-        head-of-household: (get head-of-household household-data),
-        address: (get address household-data),
-        members-count: (get members-count household-data),
-        created-at: (get created-at household-data),
-        last-updated: stacks-block-height,
-        verified: true
-      }
-    )
+    (map-set households { household-id: household-id } {
+      head-of-household: (get head-of-household household-data),
+      address: (get address household-data),
+      members-count: (get members-count household-data),
+      created-at: (get created-at household-data),
+      last-updated: stacks-block-height,
+      verified: true,
+    })
     (ok true)
   )
 )
 
-(define-public (update-resident (resident-id uint) (name (string-ascii 100)) (age uint))
-  (let
-    (
+(define-public (update-resident
+    (resident-id uint)
+    (name (string-ascii 100))
+    (age uint)
+  )
+  (let (
       (resident-data (unwrap! (map-get? residents { resident-id: resident-id }) ERR_NOT_FOUND))
       (maybe-officer (map-get? census-officers { officer: tx-sender }))
       (is-registrar (is-eq tx-sender (get registrar resident-data)))
-      (is-active-officer (match maybe-officer data (get active data) false))
+      (is-active-officer (match maybe-officer
+        data (get active data)
+        false
+      ))
     )
     (asserts! (var-get census-active) ERR_CENSUS_LOCKED)
     (asserts! (or is-registrar is-active-officer) ERR_UNAUTHORIZED)
     (asserts! (and (> (len name) u0) (> age u0)) ERR_INVALID_INPUT)
-    (map-set residents
-      { resident-id: resident-id }
-      {
-        name: name,
-        age: age,
-        household-id: (get household-id resident-data),
-        registered-at: (get registered-at resident-data),
-        verified: false,
-        registrar: (get registrar resident-data)
-      }
-    )
+    (map-set residents { resident-id: resident-id } {
+      name: name,
+      age: age,
+      household-id: (get household-id resident-data),
+      registered-at: (get registered-at resident-data),
+      verified: false,
+      registrar: (get registrar resident-data),
+    })
     (ok true)
   )
 )
@@ -307,23 +286,19 @@
 )
 
 (define-public (start-new-census-round)
-  (let
-    (
+  (let (
       (current-round (var-get census-round))
       (current-height stacks-block-height)
     )
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
-    (map-set village-stats
-      { round: current-round }
-      {
-        total-residents: (var-get total-population),
-        total-households: (var-get total-households),
-        verified-residents: u0,
-        census-start: current-height,
-        census-end: u0,
-        completed: false
-      }
-    )
+    (map-set village-stats { round: current-round } {
+      total-residents: (var-get total-population),
+      total-households: (var-get total-households),
+      verified-residents: u0,
+      census-start: current-height,
+      census-end: u0,
+      completed: false,
+    })
     (var-set census-round (+ current-round u1))
     (var-set census-active true)
     (var-set total-population u0)
@@ -333,25 +308,21 @@
 )
 
 (define-public (complete-census-round)
-  (let
-    (
+  (let (
       (current-round (- (var-get census-round) u1))
       (current-height stacks-block-height)
       (stats (unwrap! (map-get? village-stats { round: current-round }) ERR_NOT_FOUND))
     )
     (asserts! (is-eq tx-sender (var-get contract-owner)) ERR_UNAUTHORIZED)
     (var-set census-active false)
-    (map-set village-stats
-      { round: current-round }
-      {
-        total-residents: (get total-residents stats),
-        total-households: (get total-households stats),
-        verified-residents: (get verified-residents stats),
-        census-start: (get census-start stats),
-        census-end: current-height,
-        completed: true
-      }
-    )
+    (map-set village-stats { round: current-round } {
+      total-residents: (get total-residents stats),
+      total-households: (get total-households stats),
+      verified-residents: (get verified-residents stats),
+      census-start: (get census-start stats),
+      census-end: current-height,
+      completed: true,
+    })
     (ok true)
   )
 )
@@ -378,7 +349,7 @@
     round: (var-get census-round),
     total-population: (var-get total-population),
     total-households: (var-get total-households),
-    current-height: stacks-block-height
+    current-height: stacks-block-height,
   }
 )
 

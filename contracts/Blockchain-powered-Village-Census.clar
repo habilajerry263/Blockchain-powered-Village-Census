@@ -4,6 +4,7 @@
 (define-constant ERR_ALREADY_EXISTS (err u409))
 (define-constant ERR_INVALID_INPUT (err u400))
 (define-constant ERR_CENSUS_LOCKED (err u423))
+(define-constant ERR_SAME_HOUSEHOLD (err u422))
 
 (define-data-var census-active bool true)
 (define-data-var total-population uint u0)
@@ -65,6 +66,19 @@
     completed: bool,
   }
 )
+
+(define-map household-transfers
+  { transfer-id: uint }
+  {
+    resident-id: uint,
+    from-household: uint,
+    to-household: uint,
+    transferred-at: uint,
+    approved-by: principal,
+  }
+)
+
+(define-data-var transfer-counter uint u0)
 
 (define-private (get-next-resident-id)
   (let (
@@ -358,4 +372,78 @@
     officer-data (get active officer-data)
     false
   )
+)
+
+(define-public (transfer-resident
+    (resident-id uint)
+    (new-household-id uint)
+  )
+  (let (
+      (resident-data (unwrap! (map-get? residents { resident-id: resident-id }) ERR_NOT_FOUND))
+      (old-household-id (get household-id resident-data))
+      (old-household (unwrap! (map-get? households { household-id: old-household-id })
+        ERR_NOT_FOUND
+      ))
+      (new-household (unwrap! (map-get? households { household-id: new-household-id })
+        ERR_NOT_FOUND
+      ))
+      (maybe-officer (map-get? census-officers { officer: tx-sender }))
+      (is-registrar (is-eq tx-sender (get registrar resident-data)))
+      (is-active-officer (match maybe-officer
+        data (get active data)
+        false
+      ))
+      (transfer-id (var-get transfer-counter))
+      (current-height stacks-block-height)
+      (old-members (get members-count old-household))
+      (new-members (get members-count new-household))
+      (is-old-head (is-eq resident-id (get head-of-household old-household)))
+    )
+    (asserts! (var-get census-active) ERR_CENSUS_LOCKED)
+    (asserts! (or is-registrar is-active-officer) ERR_UNAUTHORIZED)
+    (asserts! (not (is-eq old-household-id new-household-id)) ERR_SAME_HOUSEHOLD)
+    (map-set residents { resident-id: resident-id } {
+      name: (get name resident-data),
+      age: (get age resident-data),
+      household-id: new-household-id,
+      registered-at: (get registered-at resident-data),
+      verified: false,
+      registrar: (get registrar resident-data),
+    })
+    (map-set households { household-id: old-household-id } {
+      head-of-household: (if is-old-head
+        u0
+        (get head-of-household old-household)
+      ),
+      address: (get address old-household),
+      members-count: (- old-members u1),
+      created-at: (get created-at old-household),
+      last-updated: current-height,
+      verified: (get verified old-household),
+    })
+    (map-set households { household-id: new-household-id } {
+      head-of-household: (if (is-eq (get head-of-household new-household) u0)
+        resident-id
+        (get head-of-household new-household)
+      ),
+      address: (get address new-household),
+      members-count: (+ new-members u1),
+      created-at: (get created-at new-household),
+      last-updated: current-height,
+      verified: (get verified new-household),
+    })
+    (map-set household-transfers { transfer-id: transfer-id } {
+      resident-id: resident-id,
+      from-household: old-household-id,
+      to-household: new-household-id,
+      transferred-at: current-height,
+      approved-by: tx-sender,
+    })
+    (var-set transfer-counter (+ transfer-id u1))
+    (ok transfer-id)
+  )
+)
+
+(define-read-only (get-transfer (transfer-id uint))
+  (map-get? household-transfers { transfer-id: transfer-id })
 )
